@@ -1,0 +1,40 @@
+dataset_path: data/raw/CICIDS2017_improved
+
+prepare:
+  cleaning:
+    filename: src/0_prepare/cleaning.py
+  normalization:
+    filename: src/0_prepare/normalize.py
+  sampling:
+    filename: src/0_prepare/sampling.py
+  
+  adjustment:
+    attempted: false
+    combine_web_attack: true
+    tool_separate: false
+  normalize_method: MinMaxScaler
+  test_size: 0.3
+  oversampling:
+    method: None
+    params:
+      neighbors: 3
+      seed: 42
+      sampling_strategy: auto
+
+train:
+  filename: src/2_train/train.py
+
+  protocol_dim: 8
+  port_dim: 32
+
+  update_target_steps: 200
+  batch_size: 256
+  gamma: 0.99
+  eps_start: 0.9
+  eps_end: 0.05
+  eps_decay: 10000
+  tau: 0.005
+  lr: 1e-4
+
+evaluate:
+  filename: src/3_evaluate/evaluate.py

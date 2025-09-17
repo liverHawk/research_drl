@@ -4,4 +4,20 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "coloredlogs>=15.0.1",
+    "flow-package",
+    "imbalanced-learn",
+    "matplotlib>=3.10.6",
+    "mlflow>=3.3.2",
+    "numpy>=2.3.3",
+    "pandas>=2.3.2",
+    "scikit-learn>=1.7.2",
+    "seaborn>=0.13.2",
+    "torch>=2.8.0",
+    "tqdm>=4.67.1",
+]
+
+[tool.uv.sources]
+imbalanced-learn = { git = "https://github.com/scikit-learn-contrib/imbalanced-learn" }
+flow-package = { git = "https://github.com/Perpetuactivity/flow_package" }

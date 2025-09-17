@@ -1,0 +1,42 @@
+params:
+  - params.yaml
+stages:
+  prepare_cleaning:
+    cmd: uv ${prepare.cleaning.filename} ${dataset_path}
+    deps:
+      - ${prepare.cleaning.filename}
+      - ${dataset_path}
+    outs:
+      - data/processed/cleaned
+      # - logs/cleaning.log
+      # - labels.txt
+  prepare_normalize:
+    cmd: uv ${prepare.normalization.filename} data/processed/cleaned
+    deps:
+      - ${prepare.normalization.filename}
+      - data/processed/cleaned
+    outs:
+      - data/processed/normalized
+      # - logs/normalize.log
+  prepare_sampling:
+    cmd: uv ${prepare.sampling.filename} data/processed/normalized/train
+    deps:
+      - ${prepare.sampling.filename}
+      - data/processed/normalized/train
+    outs:
+      - data/processed/sampled
+  train:
+    cmd: uv ${train.filename}
+    deps:
+      - ${train.filename}
+      - data/processed/sampled
+    outs:
+      - models
+  evaluate:
+    cmd: uv ${evaluate.filename}
+    deps:
+      - ${evaluate.filename}
+      - models
+      - data/processed/normalized/test
+    outs:
+      - evaluations
