@@ -2,12 +2,12 @@ dataset_path: data/raw/CICIDS2017_improved
 
 prepare:
   cleaning:
-    filename: src/0_prepare/cleaning.py
+    filename: src/1_prepare/cleaning.py
   normalization:
-    filename: src/0_prepare/normalize.py
+    filename: src/1_prepare/normalize.py
   sampling:
-    filename: src/0_prepare/sampling.py
-  
+    filename: src/1_prepare/sampling.py
+
   adjustment:
     attempted: false
     combine_web_attack: true
@@ -22,7 +22,7 @@ prepare:
       sampling_strategy: auto
 
 train:
-  filename: src/2_train/train.py
+  filename: src/2_train/multi_train.py
 
   protocol_dim: 8
   port_dim: 32
@@ -34,9 +34,10 @@ train:
   eps_end: 0.05
   eps_decay: 10000
   tau: 0.005
-  lr: 1e-4
+  lr: 0.00001
   memory_size: 10000
-  n_episodes: 500
+  n_episodes: 10
+  sample_size: 100
 
 evaluate:
   filename: src/3_evaluate/evaluate.py

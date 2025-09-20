@@ -6,6 +6,8 @@ import yaml
 import imblearn.over_sampling as imblearn_os
 import pandas as pd
 
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+from lib.utils import setup_logging
 from lib.csv import save_split_csv, multiprocess_save_csv, save_csv
 
 
@@ -50,15 +52,17 @@ def oversampling(df, method, method_params):
 
 
 def main():
-    FIXED_ROWS = 5_000_000
+    logger = setup_logging("logs/sampling.log")
+    FIXED_ROWS = 500_000
     if len(sys.argv) != 2:
-        print("Usage: python sampling.py <data_path>")
+        logger.error("Usage: python sampling.py <data_path>")
         sys.exit(1)
     params = yaml.safe_load(open("params.yaml"))["prepare"]
 
     data_path = sys.argv[1]
     files = glob(os.path.join(data_path, "*.csv.gz"))
 
+    logger.info("Loading CSV files...")
     dfs = [
         pd.read_csv(file) for file in tqdm(files, desc="Loading CSV files")
     ]
@@ -66,9 +70,10 @@ def main():
 
     df = oversampling(df, params["oversampling"]["method"], params["oversampling"]["params"])
 
-    sampling_path = os.path.join(data_path, "..", "oversampled")
+    sampling_path = os.path.join(data_path, "..", "..", "sampled")
     os.makedirs(sampling_path, exist_ok=True)
     
+    logger.info("Saving oversampled CSV files...")
     files = save_split_csv(
         df=df,
         output_dir=sampling_path,

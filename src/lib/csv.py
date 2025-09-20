@@ -31,9 +31,10 @@ def multiprocess_save_csv(dfs, paths):
         futures = [
             executor.submit(save_csv, df, path) for df, path in zip(dfs, paths)
         ]
-        for future in tqdm(as_completed(futures)):
-            try:
-                future.result()
-            except Exception as e:
-                print(f"Error during saving CSV files: {e}")
-                raise e
+        with tqdm(total=len(futures)) as pbar:
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                    pbar.update(1)
+                except Exception as e:
+                    print(f"Error during saving CSV files: {e}")

@@ -6,7 +6,8 @@ import pandas as pd
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 
-from lib.utils import setup_logger
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+from lib.utils import setup_logging
 from lib.csv import save_split_csv, multiprocess_save_csv, save_csv
 
 
@@ -35,8 +36,8 @@ def normalize(df, method, logger):
 
 
 def save_df(train_df, test_df, path, logger):
-    train_path = os.path.join(path, "train", "train.csv.gz")
-    test_path = os.path.join(path, "test", "test.csv.gz")
+    train_path = os.path.join(path, "train")
+    test_path = os.path.join(path, "test")
 
     train = save_split_csv(
         df=train_df,
@@ -73,7 +74,7 @@ def main():
     params = yaml.safe_load(open("params.yaml"))["prepare"]
 
     log_path = os.path.join("logs", "normalize.log")
-    logger = setup_logger(log_path)
+    logger = setup_logging(log_path)
 
     files = glob(os.path.join(data_path, "*.csv.gz"))
     dfs = [

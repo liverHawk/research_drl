@@ -1,4 +1,5 @@
 import os
+import sys
 import yaml
 import random
 import pandas as pd
@@ -9,26 +10,38 @@ import torch.nn as nn
 import torch.nn.utils as utils
 import torch.optim as optim
 
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
 from itertools import count
 from glob import glob
 from torch.amp import autocast, GradScaler
+from tqdm import tqdm
 
 import flow_package as fp
-from flow_package.multi_flow_env import MultipleFlowEnv, InputType
+from flow_package.multi_flow_env import MultiFlowEnv, InputType
 
+from lib.utils import setup_logging
 from lib.network import DeepFlowNetwork
 from lib.deep_learn import ReplayMemory, moving_average, Transaction
 
+# Global variable for epsilon-greedy action selection
+steps_done = 0
 
-def to_tensor(x, device=torch.device("cpu")):
-    port = torch.tensor(x[:, 0]).unsqueeze(1).to(device)
-    protocol = torch.tensor(x[:, 1]).unsqueeze(1).to(device)
-    features = torch.tensor(x[:, 2:]).to(device)
-    return torch.cat([port, protocol, features], dim=1)
 
-def load_csv():
-    path = os.path.join("data", "processed", "sampled")
-    files = glob(os.path.join(path, "*.csv.gz"))
+# def to_tensor(x, device=torch.device("cpu")):
+#     # numpy配列を効率的にテンソルに変換
+#     if isinstance(x, (list, tuple)):
+#         x = np.array(x)
+    
+#     # ポートとプロトコルは整数型、バッチサイズ1で作成
+#     port = torch.tensor([x[0]], dtype=torch.long, device=device)
+#     protocol = torch.tensor([x[1]], dtype=torch.long, device=device)
+#     # 残りの特徴量は浮動小数点型、バッチサイズ1で作成
+#     features = torch.tensor(x[2:].reshape(1, -1), dtype=torch.float32, device=device)
+#     return [port, protocol, features]
+
+def load_csv(input):
+    files = glob(os.path.join(input, "*.csv.gz"))
     df = pd.concat([
         pd.read_csv(f) for f in files
     ])
@@ -48,14 +61,13 @@ def select_action(state_tensor: torch.Tensor, **kwargs):
     EPS_DECAY = kwargs.get("EPS_DECAY", 200)
     policy_net = kwargs.get("policy_net")
     n_actions = kwargs.get("n_actions")
+    steps_done = kwargs.get("steps_done", 0)
 
     """
     ε-greedy法による行動選択
     """
-    global steps_done
     sample = random.random()
     eps_threshold = EPS_END + (EPS_START - EPS_END) * np.exp(-1. * steps_done / EPS_DECAY)
-    steps_done += 1
     # state_tensorはリスト形式（[port, protocol, other]）
     if sample > eps_threshold:
         with torch.no_grad():
@@ -68,7 +80,7 @@ def select_action(state_tensor: torch.Tensor, **kwargs):
         )
 
 
-def optimize_model(**kwargs):
+def optimize_model(kwargs):
     BATCH_SIZE = kwargs.get("BATCH_SIZE", 128)
     GAMMA = kwargs.get("GAMMA", 0.999)
     device = kwargs.get("device", torch.device("cpu"))
@@ -86,7 +98,7 @@ def optimize_model(**kwargs):
     batch = Transaction(*zip(*transitions))
     state_batch = _unpack_state_batch(batch.state)
     action_batch = torch.cat(batch.action).to(device)
-    reward_batch = torch.cat(batch.reward).to(device)
+    reward_batch = torch.cat([torch.tensor([rew], dtype=torch.float32) for rew in batch.reward]).to(device)
     non_final_mask = torch.tensor([s is not None for s in batch.next_state], device=device, dtype=torch.bool)
     non_final_next_states = [s for s in batch.next_state if s is not None]
     if non_final_next_states:
@@ -155,21 +167,29 @@ def write_result(cm_memory, episode, n_input, n_output):
 
 
 def train(df, params):
-    label_count = len(df[params["input_labels"]].unique())
+    logger = setup_logging("logs/multi_train.log")
+
+    logger.info("Starting training...")
+    label_count = len(df["Label"].unique())
     reward_matrix = np.ones((label_count, label_count)) * -1.0
     np.fill_diagonal(reward_matrix, 1.0)
 
+    columns = df.columns.tolist()
+    columns.remove("Label")
+
     input = InputType(
         data=df,
-        input_features=params["input_features"],
-        input_labels=params["input_labels"],
+        sample_size=params.get("sample_size", 100000),
+        normalize_exclude_columns=["Protocol", "Destination Port"],
+        # exclude_columns=["Attempted Category"],
         reward_list=reward_matrix
     )
-    env = MultipleFlowEnv(input)
+    env = MultiFlowEnv(input)
 
     n_states = env.observation_space.shape[0]
     n_actions = env.action_space.n
 
+    logger.info(f"State space: {n_states}, Action space: {n_actions}")
     policy_net = DeepFlowNetwork(n_states, n_actions)
     target_net = DeepFlowNetwork(n_states, n_actions)
     target_net.load_state_dict(policy_net.state_dict())
@@ -180,8 +200,8 @@ def train(df, params):
     optimizer = optim.Adam(policy_net.parameters(), lr=params["lr"])
     memory = ReplayMemory(params["memory_size"])
 
-    select_action["policy_net"] = policy_net
-    select_action["n_actions"] = n_actions
+    select_args["policy_net"] = policy_net
+    select_args["n_actions"] = n_actions
 
     optimize_args["device"] = torch.device(params.get("device", "cpu"))
     optimize_args["memory"] = memory
@@ -189,42 +209,53 @@ def train(df, params):
     optimize_args["target_net"] = target_net
     optimize_args["optimizer"] = optimizer
 
-    for i_episode in range(params["n_episodes"]):
-        print(f"Episode {i_episode} start")
+    for i_episode in tqdm(range(params["n_episodes"])):
         random.seed(i_episode)
 
         initial_state = env.reset()
-        state = to_tensor(initial_state)
+        state = fp.to_tensor(initial_state)
 
         for t in count():
             action = select_action(state, **select_args)
             raw_next_state, reward, terminated, _, info = env.step(action.item())
+
+            # Ensure reward is a scalar by summing if it's an array/list
+            if isinstance(reward, (list, tuple, np.ndarray)):
+                reward = np.sum(reward)
 
             cm_memory.append([
                 info["action"],
                 info["answer"],
             ])
 
-            next_state = to_tensor(raw_next_state) if not terminated else None
+            next_state = fp.to_tensor(raw_next_state) if not terminated else None
             memory.push(state, action, next_state, reward)
             state = next_state
 
             loss = optimize_model(optimize_args)
             if terminated:
-                print(f"Episode {i_episode} finished after {t+1} steps")
+                # logger.info(f"Episode {i_episode} finished after {t+1} steps")
                 break
-        
-        write_result(cm_memory, i_episode)
+
+        write_result(cm_memory, i_episode, n_states, n_actions)
         cm_memory = []
-        
+    
+    path = os.path.join("models", "multi_dqn_model.pth")
+    os.makedirs("models", exist_ok=True)
+    torch.save(policy_net.state_dict(), path)
+
 
 def main():
+    if len(sys.argv) != 2:
+        print("Usage: python src/train/multi_train.py <input_file_directory>")
+        sys.exit(1)
+    input = sys.argv[1]
     params = yaml.safe_load(open("params.yaml"))["train"]
 
     with open("train_result.txt", "w") as f:
         f.write(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + "\n")
 
-    df = load_csv()
+    df = load_csv(input)
 
     train(df, params)
 

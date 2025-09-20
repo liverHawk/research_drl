@@ -3,16 +3,16 @@ name = "research-drl"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.10"
 dependencies = [
     "coloredlogs>=15.0.1",
     "flow-package",
-    "imbalanced-learn",
+    "imbalanced-learn>=0.15.dev0",
     "matplotlib>=3.10.6",
-    "mlflow>=3.3.2",
-    "numpy>=2.3.3",
+    "mlflow>=3.4.0",
+    "numpy>=2.2.6",
     "pandas>=2.3.2",
-    "scikit-learn>=1.7.2",
+    "scikit-learn>=1.6.1",
     "seaborn>=0.13.2",
     "torch>=2.8.0",
     "tqdm>=4.67.1",
@@ -20,4 +20,4 @@ dependencies = [
 
 [tool.uv.sources]
 imbalanced-learn = { git = "https://github.com/scikit-learn-contrib/imbalanced-learn" }
-flow-package = { git = "https://github.com/Perpetuactivity/flow_package" }
+flow-package = { git = "https://github.com/Perpetuactivity/flow_package.git", branch = "upgrade" }

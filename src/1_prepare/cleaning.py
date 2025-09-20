@@ -1,13 +1,17 @@
 import os
 import yaml
 import sys
+
+# Add the src directory to the Python path to access lib module
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
 import pandas as pd
 import numpy as np
 from glob import glob
 from tqdm import tqdm
 from ipaddress import ip_address as ip
 from sklearn.preprocessing import LabelEncoder
-import mlflow
+# import mlflow
 
 from lib.utils import CICIDS2017, BASE, setup_logging
 from lib.csv import save_split_csv, multiprocess_save_csv, save_csv
@@ -99,10 +103,10 @@ def main():
     all_params = yaml.safe_load(open("params.yaml"))
     params = all_params["prepare"]
 
-    mlflow.set_tracking_uri(all_params["mlflow"]["tracking_uri"])
-    mlflow.set_experiment(
-        f"{all_params['mlflow']['experiment_name']}_prepare"
-    )
+    # mlflow.set_tracking_uri(all_params["mlflow"]["tracking_uri"])
+    # mlflow.set_experiment(
+    #     f"{all_params['mlflow']['experiment_name']}_prepare"
+    # )
 
     print(params)
 
@@ -120,8 +124,6 @@ def main():
     os.makedirs(prepare_dir, exist_ok=True)
     os.makedirs(os.path.join(prepare_dir, "clean"), exist_ok=True)
 
-    output_clean = os.path.join(prepare_dir, "clean")
-
     dataset_path = input
 
     df = data_process(
@@ -131,7 +133,7 @@ def main():
 
     files = save_split_csv(
         df=df,
-        output_dir=output_clean,
+        output_dir=prepare_dir,
         output_prefix="cleaned",
         chunk_size=500_000
     )
@@ -145,7 +147,6 @@ def main():
         print(f"Error during saving CSV files: {e}")
         for file in files:
             save_csv(file[0], file[1])
-
 
 
 if __name__ == "__main__":
