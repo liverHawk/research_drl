@@ -95,11 +95,15 @@ stages:
       nfiles: 1
     - path: src/3_evaluate/evaluate.py
       hash: md5
-      md5: 6d5567c7cbb339bd53133a538f741fca
-      size: 3356
+      md5: 93435d32a4d5ed10984a22305223e552
+      size: 3433
     outs:
     - path: evaluate
       hash: md5
       md5: bd3481c5346504a6b57757d99fa6887a.dir
       size: 2520016
       nfiles: 1
+    - path: logs/evaluate.log
+      hash: md5
+      md5: 7814be551011ed78170ac80503668db5
+      size: 135
