@@ -35,6 +35,8 @@ train:
   eps_decay: 10000
   tau: 0.005
   lr: 1e-4
+  memory_size: 10000
+  n_episodes: 500
 
 evaluate:
   filename: src/3_evaluate/evaluate.py
