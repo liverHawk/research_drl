@@ -161,13 +161,13 @@ def write_result(cm_memory, episode, n_input, n_output):
     cm = np.zeros((n_input, n_output), dtype=int)
     for action, answer in cm_memory:
         cm[action][answer] += 1
-    with open("train_result.txt", "a") as f:
+    with open("logs/train_result.log", "a") as f:
         f.write(f"Episode {episode}:\n")
         f.write(f"{cm}\n")
 
 
 def train(df, params):
-    logger = setup_logging("logs/multi_train.log")
+    logger = setup_logging("logs/train.log")
 
     logger.info("Starting training...")
     label_count = len(df["Label"].unique())
@@ -252,7 +252,7 @@ def main():
     input = sys.argv[1]
     params = yaml.safe_load(open("params.yaml"))["train"]
 
-    with open("train_result.txt", "w") as f:
+    with open("logs/train_result.log", "w") as f:
         f.write(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + "\n")
 
     df = load_csv(input)

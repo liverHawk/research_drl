@@ -69,7 +69,7 @@ def min_label_count(df):
 
 
 def data_process(input_path, params):
-    log_path = os.path.join("logs", "prepare.log")
+    log_path = os.path.join("logs", "cleaning.log")
     logger = setup_logging(log_path)
 
     logger.info("Starting data processing...")

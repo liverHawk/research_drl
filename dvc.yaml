@@ -8,7 +8,7 @@ stages:
       - ${dataset_path}
     outs:
       - data/processed/cleaned
-      # - logs/cleaning.log
+      - logs/cleaning.log
       - labels.txt
   prepare_normalize:
     cmd: uv run ${prepare.normalization.filename} data/processed/cleaned
@@ -25,6 +25,7 @@ stages:
       - data/processed/normalized/train
     outs:
       - data/processed/sampled
+      - logs/sampling.log
   train:
     cmd: uv run ${train.filename} data/processed/sampled
     deps:
@@ -32,6 +33,8 @@ stages:
       - data/processed/sampled
     outs:
       - models
+      - logs/train.log
+      - logs/train_result.log
   evaluate:
     cmd: uv run ${evaluate.filename} data/processed/normalized/test
     deps:

@@ -9,3 +9,5 @@
 .augment/rules/byterover-rules.md
 /evaluate
 __pycache__
+/labels.txt
+/models

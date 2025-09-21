@@ -1,0 +1,5 @@
+[core]
+    remote = az
+['remote "az"']
+    url = azure://test
+    account_name = dvc2test
