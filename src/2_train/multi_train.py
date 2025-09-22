@@ -9,6 +9,8 @@ import torch
 import torch.nn as nn
 import torch.nn.utils as utils
 import torch.optim as optim
+import mlflow
+
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
@@ -20,6 +22,7 @@ from tqdm import tqdm
 import flow_package as fp
 from flow_package.multi_flow_env import MultiFlowEnv, InputType
 
+from lib import plot as plot_lib
 from lib.utils import setup_logging
 from lib.network import DeepFlowNetwork
 from lib.deep_learn import ReplayMemory, moving_average, Transaction
@@ -158,16 +161,27 @@ def get_args(params):
 
 def write_result(cm_memory, episode, n_input, n_output):
     # 混同行列の計算
-    cm = np.zeros((n_input, n_output), dtype=int)
+    cm = np.zeros((n_output, n_output), dtype=int)
     for action, answer in cm_memory:
         cm[action][answer] += 1
     with open("logs/train_result.log", "a") as f:
         f.write(f"Episode {episode}:\n")
         f.write(f"{cm}\n")
+    total = cm.sum()
+    accuracy = float(cm.diagonal().sum() / total) if total > 0 else 0.0
+    return cm, accuracy
 
 
 def train(df, params):
     logger = setup_logging("logs/train.log")
+
+    # ログパラメータを保存
+    mlflow.log_params({
+        "n_episodes": params.get("n_episodes"),
+        "batch_size": params.get("batch_size"),
+        "lr": params.get("lr"),
+        "memory_size": params.get("memory_size")
+    })
 
     logger.info("Starting training...")
     label_count = len(df["Label"].unique())
@@ -196,6 +210,15 @@ def train(df, params):
 
     cm_memory = []
 
+    # メトリクス収集用
+    metrics = {
+        "reward": [],
+        "loss": [],
+        "accuracy": [],
+        "steps": [],
+        "last_cm": None
+    }
+
     select_args, optimize_args = get_args(params)
     optimizer = optim.Adam(policy_net.parameters(), lr=params["lr"])
     memory = ReplayMemory(params["memory_size"])
@@ -209,11 +232,19 @@ def train(df, params):
     optimize_args["target_net"] = target_net
     optimize_args["optimizer"] = optimizer
 
+    os.makedirs("train/plots", exist_ok=True)
+
+    log_plot_interval = params.get("log_plot_interval", 10)
+
     for i_episode in tqdm(range(params["n_episodes"])):
         random.seed(i_episode)
 
         initial_state = env.reset()
         state = fp.to_tensor(initial_state)
+
+        episode_reward = 0.0
+        episode_losses = []
+        episode_steps = 0
 
         for t in count():
             action = select_action(state, **select_args)
@@ -222,6 +253,7 @@ def train(df, params):
             # Ensure reward is a scalar by summing if it's an array/list
             if isinstance(reward, (list, tuple, np.ndarray)):
                 reward = np.sum(reward)
+            episode_reward += float(reward)
 
             cm_memory.append([
                 info["action"],
@@ -233,16 +265,69 @@ def train(df, params):
             state = next_state
 
             loss = optimize_model(optimize_args)
+            if loss is not None:
+                episode_losses.append(loss)
+            episode_steps += 1
+
             if terminated:
-                # logger.info(f"Episode {i_episode} finished after {t+1} steps")
                 break
 
-        write_result(cm_memory, i_episode, n_states, n_actions)
+        avg_loss = float(np.mean(episode_losses)) if episode_losses else 0.0
+        cm, accuracy = write_result(cm_memory, i_episode, n_states, n_actions)
+
+        metrics["reward"].append(episode_reward)
+        metrics["loss"].append(avg_loss)
+        metrics["accuracy"].append(accuracy)
+        metrics["steps"].append(episode_steps)
+        metrics["last_cm"] = cm.copy()
+
+        # エピソードごとにログ用CSVへ追記
+        os.makedirs("train", exist_ok=True)
+        metrics_df = pd.DataFrame({
+            "episode": np.arange(len(metrics["reward"])),
+            "reward": metrics["reward"],
+            "loss": metrics["loss"],
+            "accuracy": metrics["accuracy"],
+            "steps": metrics["steps"]
+        })
+        metrics_df.to_csv("train/metrics.csv", index=False)
+
+        # mlflow に逐次メトリクスを送信（step=i_episode）
+        mlflow.log_metric("reward", float(episode_reward), step=i_episode)
+        mlflow.log_metric("loss", float(avg_loss), step=i_episode)
+        mlflow.log_metric("accuracy", float(accuracy), step=i_episode)
+        mlflow.log_metric("steps", int(episode_steps), step=i_episode)
+
+        # プロットを定期的に作成して mlflow にアップロード
+        if (i_episode + 1) % log_plot_interval == 0 or i_episode == params["n_episodes"] - 1:
+            # Loss plot
+            loss_path = os.path.join("train/plots", f"loss_ep_{i_episode:04d}.png")
+            plot_lib.plot_data(metrics["loss"], "loss", save_path=loss_path, window=params.get("plot_window", 50))
+            mlflow.log_artifact(loss_path)
+
+            # Accuracy plot
+            acc_path = os.path.join("train/plots", f"accuracy_ep_{i_episode:04d}.png")
+            plot_lib.plot_data(metrics["accuracy"], "accuracy", save_path=acc_path, window=params.get("plot_window", 50))
+            mlflow.log_artifact(acc_path)
+
+            # 最後の混同行列（存在する場合）
+            if metrics["last_cm"] is not None:
+                cm_path = os.path.join("train/plots", f"confusion_ep_{i_episode:04d}.png")
+                plot_lib.plot_data(metrics["last_cm"], "confusion_matrix", save_path=cm_path, fmt=".0f")
+                mlflow.log_artifact(cm_path)
+
         cm_memory = []
-    
+
+    # 学習終了後に最終アーティファクトを保存
+    # モデル
     path = os.path.join("models", "multi_dqn_model.pth")
     os.makedirs("models", exist_ok=True)
     torch.save(policy_net.state_dict(), path)
+    mlflow.log_artifact(path, artifact_path="models")
+
+    # 全メトリクスCSV と logs をまとめて保存
+    mlflow.log_artifact("train/metrics.csv")
+    mlflow.log_artifacts("train/plots")
 
 
 def main():
@@ -250,14 +335,22 @@ def main():
         print("Usage: python src/train/multi_train.py <input_file_directory>")
         sys.exit(1)
     input = sys.argv[1]
-    params = yaml.safe_load(open("params.yaml"))["train"]
+    all_params = yaml.safe_load(open("params.yaml"))
+
+    mlflow.set_tracking_uri(all_params["mlflow"]["tracking_uri"])
+    mlflow.set_experiment(
+        f"{all_params['mlflow']['experiment_prefix']}_train"
+    )
+    params = all_params["train"]
 
     with open("logs/train_result.log", "w") as f:
         f.write(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + "\n")
 
+    mlflow.start_run()
     df = load_csv(input)
 
     train(df, params)
+    mlflow.end_run()
 
 
 if __name__ == "__main__":

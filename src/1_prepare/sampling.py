@@ -5,6 +5,7 @@ import sys
 import yaml
 import imblearn.over_sampling as imblearn_os
 import pandas as pd
+import mlflow
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from lib.utils import setup_logging
@@ -57,11 +58,19 @@ def main():
     if len(sys.argv) != 2:
         logger.error("Usage: python sampling.py <data_path>")
         sys.exit(1)
-    params = yaml.safe_load(open("params.yaml"))["prepare"]
+    all_params = yaml.safe_load(open("params.yaml"))
+    
+    mlflow.set_tracking_uri(all_params["mlflow"]["tracking_uri"])
+    mlflow.set_experiment(
+        f"{all_params['mlflow']['experiment_prefix']}_prepare"
+    )
+
+    params = all_params["prepare"]
 
     data_path = sys.argv[1]
     files = glob(os.path.join(data_path, "*.csv.gz"))
 
+    mlflow.start_run()
     logger.info("Loading CSV files...")
     dfs = [
         pd.read_csv(file) for file in tqdm(files, desc="Loading CSV files")
@@ -90,6 +99,9 @@ def main():
         print(f"Error during saving CSV files: {e}")
         for file in files:
             save_csv(file[0], file[1])
+
+    mlflow.log_artifact("logs/sampling.log")
+    mlflow.end_run()
 
 
 if __name__ == "__main__":

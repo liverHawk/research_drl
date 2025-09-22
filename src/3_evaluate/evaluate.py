@@ -17,6 +17,10 @@ from flow_package.multi_flow_env import MultiFlowEnv, InputType
 from lib.utils import setup_logging
 from lib.network import DeepFlowNetwork
 
+# 追加インポート: mlflow とプロットユーティリティ
+import mlflow
+from lib import plot as plot_lib
+
 
 def load_csv(input):
     files = glob(os.path.join(input, "*.csv.gz"))
@@ -27,19 +31,38 @@ def load_csv(input):
 
 
 def write_result(cm_memory, prefix):
-    # データを整数形式に変換して確実にする
+    # cm_memory: list of [predicted, actual]
     cm_data = []
-    for predicted, actual in cm_memory:
-        # テンソルの場合は.item()で値を取得、そうでなければそのまま使用
-        pred_val = predicted.item() if hasattr(predicted, 'item') else int(predicted)
-        actual_val = actual.item() if hasattr(actual, 'item') else int(actual)
+    for pred, actual in cm_memory:
+        pred_val = pred.item() if hasattr(pred, "item") else int(pred)
+        actual_val = actual.item() if hasattr(actual, "item") else int(actual)
         cm_data.append([pred_val, actual_val])
-    
-    cm = pd.DataFrame(cm_data, columns=["Predicted", "Actual"])
-    cm_path = os.path.join("evaluate", f"{prefix}_confusion_matrix.csv")
+
+    if len(cm_data) == 0:
+        # 空の場合は空のファイルを作るだけ
+        os.makedirs("evaluate", exist_ok=True)
+        cm_path = os.path.join("evaluate", f"{prefix}_confusion_matrix.csv")
+        pd.DataFrame(columns=["Predicted", "Actual"]).to_csv(cm_path, index=False)
+        return None, 0.0, cm_path
+
+    # クラス数はデータ上の最大ラベルから推定
+    preds = [p for p, a in cm_data]
+    actuals = [a for p, a in cm_data]
+    n = max(max(preds), max(actuals)) + 1
+    cm = np.zeros((n, n), dtype=int)
+
+    # plot.py のラベル付け（x: Actual, y: Predicted）に合わせて cm[predicted][actual] を増やす
+    for pred, actual in cm_data:
+        cm[pred][actual] += 1
+
     os.makedirs("evaluate", exist_ok=True)
-    cm.to_csv(cm_path, index=False)
-    # print(f"Confusion matrix saved to {cm_path}")
+    cm_path = os.path.join("evaluate", f"{prefix}_confusion_matrix.csv")
+    # CSV 保存（行: Predicted, 列: Actual のマトリクス形式）
+    pd.DataFrame(cm).to_csv(cm_path, index=True)
+
+    total = cm.sum()
+    accuracy = float(np.trace(cm) / total) if total > 0 else 0.0
+    return cm, accuracy, cm_path
 
 
 def test(df, params):
@@ -64,7 +87,7 @@ def test(df, params):
     log_path = os.path.join("logs", "evaluate.log")
     logger = setup_logging(log_path)
     logger.info("Starting evaluation...")
-
+    
     for i_loop in range(1):
         raw_state = env.reset()
         try:
@@ -77,14 +100,11 @@ def test(df, params):
                 predicted_action = network(state).max(1).indices.view(1, 1)
 
             raw_next_state, reward, terminated, _, info = env.step(predicted_action.item())
-            actual_action = info["action"]
+            # predicted と actual を混同行列用に保存（predicted, actual）
             actual_answer = info["answer"]
-
-            # 両方を整数形式で保存
-            cm_memory.append([actual_action, actual_answer])
+            cm_memory.append([predicted_action, actual_answer])
 
             if terminated:
-                # logger.info(f"Evaluation finished after {t+1} steps")
                 break
             try:
                 next_state = to_tensor(raw_next_state)
@@ -93,11 +113,29 @@ def test(df, params):
 
             state = next_state
             progress_bar.update(1)
-    
+
         progress_bar.close()
-    
+
     logger.info("Evaluation completed.")
-    write_result(cm_memory, "evaluate")
+
+    # 結果保存と mlflow ログ
+    cm, accuracy, cm_csv_path = write_result(cm_memory, "evaluate")
+    # 数値メトリクスを mlflow に保存（数値のみ）
+    total_samples = int(cm.sum()) if cm is not None else 0
+    mlflow.log_metric("accuracy", float(accuracy))
+    mlflow.log_metric("total_samples", int(total_samples))
+
+    # 混同行列をプロットして保存・アップロード
+    os.makedirs("evaluate/plots", exist_ok=True)
+    if cm is not None:
+        cm_img_path = os.path.join("evaluate/plots", "confusion_matrix_evaluate.png")
+        plot_lib.plot_data(cm, "confusion_matrix", save_path=cm_img_path, fmt=".0f")
+        mlflow.log_artifact(cm_img_path, artifact_path="evaluate/plots")
+
+    # CSV もアーティファクトとして保存
+    mlflow.log_artifact(cm_csv_path, artifact_path="evaluate")
+
+    logger.info(f"Saved evaluation artifacts. accuracy={accuracy:.6f}, samples={total_samples}")
 
 
 def main():
@@ -106,10 +144,17 @@ def main():
         sys.exit(1)
     params = yaml.safe_load(open("params.yaml"))
 
+    mlflow.set_tracking_uri(params["mlflow"]["tracking_uri"])
+    mlflow.set_experiment(
+        f"{params['mlflow']['experiment_prefix']}_evaluate"
+    )
+    mlflow.start_run()
+
     input = sys.argv[1]
     df = load_csv(input)
 
     test(df, params)
+    mlflow.end_run()
 
 
 if __name__ == "__main__":

@@ -1,8 +1,14 @@
 params:
   - params.yaml
+  - mlflow.experiment_prefix
+  - mlflow.tracking_uri
 stages:
   prepare_cleaning:
     cmd: uv run ${prepare.cleaning.filename} ${dataset_path}
+    params:
+      - prepare.adjustment.attempted
+      - prepare.adjustment.combine_web_attack
+      - prepare.adjustment.tool_separate
     deps:
       - ${prepare.cleaning.filename}
       - ${dataset_path}
@@ -12,6 +18,9 @@ stages:
       - labels.txt
   prepare_normalize:
     cmd: uv run ${prepare.normalization.filename} data/processed/cleaned
+    params:
+      - prepare.normalize_method
+      - prepare.test_size
     deps:
       - ${prepare.normalization.filename}
       - data/processed/cleaned
@@ -20,6 +29,9 @@ stages:
       - logs/normalize.log
   prepare_sampling:
     cmd: uv run ${prepare.sampling.filename} data/processed/normalized/train
+    params:
+      - prepare.oversampling.method
+      - prepare.oversampling.params
     deps:
       - ${prepare.sampling.filename}
       - data/processed/normalized/train
@@ -28,6 +40,20 @@ stages:
       - logs/sampling.log
   train:
     cmd: uv run ${train.filename} data/processed/sampled
+    params:
+      - train.protocol_dim
+      - train.port_dim
+      - train.update_target_steps
+      - train.batch_size
+      - train.gamma
+      - train.eps_start
+      - train.eps_end
+      - train.eps_decay
+      - train.tau
+      - train.lr
+      - train.memory_size
+      - train.n_episodes
+      - train.sample_size
     deps:
       - ${train.filename}
       - data/processed/sampled
@@ -35,6 +61,7 @@ stages:
       - models
       - logs/train.log
       - logs/train_result.log
+      - train/plots
   evaluate:
     cmd: uv run ${evaluate.filename} data/processed/normalized/test
     deps:

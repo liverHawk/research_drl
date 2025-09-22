@@ -11,3 +11,5 @@
 __pycache__
 /labels.txt
 /models
+/mlartifacts
+/mlruns

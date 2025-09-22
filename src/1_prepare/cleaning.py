@@ -11,7 +11,7 @@ from glob import glob
 from tqdm import tqdm
 from ipaddress import ip_address as ip
 from sklearn.preprocessing import LabelEncoder
-# import mlflow
+import mlflow
 
 from lib.utils import CICIDS2017, BASE, setup_logging
 from lib.csv import save_split_csv, multiprocess_save_csv, save_csv
@@ -103,10 +103,11 @@ def main():
     all_params = yaml.safe_load(open("params.yaml"))
     params = all_params["prepare"]
 
-    # mlflow.set_tracking_uri(all_params["mlflow"]["tracking_uri"])
-    # mlflow.set_experiment(
-    #     f"{all_params['mlflow']['experiment_name']}_prepare"
-    # )
+    mlflow.set_tracking_uri(all_params["mlflow"]["tracking_uri"])
+    mlflow.set_experiment(
+        f"{all_params['mlflow']['experiment_prefix']}_cleaning"
+    )
+    mlflow.start_run()
 
     print(params)
 
@@ -147,6 +148,11 @@ def main():
         print(f"Error during saving CSV files: {e}")
         for file in files:
             save_csv(file[0], file[1])
+
+    mlflow.log_artifact("logs/cleaning.log")
+    mlflow.log_artifact("labels.txt")
+
+    mlflow.end_run()
 
 
 if __name__ == "__main__":

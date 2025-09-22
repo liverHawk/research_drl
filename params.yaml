@@ -1,5 +1,9 @@
 dataset_path: data/raw/CICIDS2017_improved
 
+mlflow:
+  experiment_prefix: DRL
+  tracking_uri: http://127.0.0.1:5000
+
 prepare:
   cleaning:
     filename: src/1_prepare/cleaning.py
@@ -34,10 +38,10 @@ train:
   eps_end: 0.05
   eps_decay: 10000
   tau: 0.005
-  lr: 0.00001
+  lr: 0.0001
   memory_size: 10000
   n_episodes: 10
-  sample_size: 100
+  sample_size: 100000
 
 evaluate:
   filename: src/3_evaluate/evaluate.py

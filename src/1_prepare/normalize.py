@@ -5,6 +5,7 @@ import yaml
 import pandas as pd
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
+import mlflow
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from lib.utils import setup_logging
@@ -71,10 +72,19 @@ def main():
         sys.exit(1)
 
     data_path = sys.argv[1]
-    params = yaml.safe_load(open("params.yaml"))["prepare"]
+    all_params = yaml.safe_load(open("params.yaml"))
+
+    mlflow.set_tracking_uri(all_params["mlflow"]["tracking_uri"])
+    mlflow.set_experiment(
+        f"{all_params['mlflow']['experiment_prefix']}_normalize"
+    )
+
+    params = all_params["prepare"]
 
     log_path = os.path.join("logs", "normalize.log")
     logger = setup_logging(log_path)
+
+    mlflow.start_run()
 
     files = glob(os.path.join(data_path, "*.csv.gz"))
     dfs = [
@@ -94,6 +104,9 @@ def main():
     )
 
     save_df(train_df, test_df, normalize_path, logger)
+
+    mlflow.log_artifact(str(log_path))
+    mlflow.end_run()
 
 
 if __name__ == "__main__":
