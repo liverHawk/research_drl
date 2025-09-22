@@ -30,6 +30,9 @@ from lib.deep_learn import ReplayMemory, moving_average, Transaction
 # Global variable for epsilon-greedy action selection
 steps_done = 0
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("mps" if torch.mps.is_available() else "cpu")
+
 
 # def to_tensor(x, device=torch.device("cpu")):
 #     # numpy配列を効率的にテンソルに変換
@@ -79,14 +82,14 @@ def select_action(state_tensor: torch.Tensor, **kwargs):
         return torch.tensor(
             [[random.randrange(n_actions)]],
             dtype=torch.long,
-            # device=device
+            device=device
         )
 
 
 def optimize_model(kwargs):
     BATCH_SIZE = kwargs.get("BATCH_SIZE", 128)
     GAMMA = kwargs.get("GAMMA", 0.999)
-    device = kwargs.get("device", torch.device("cpu"))
+    # device = kwargs.get("device", torch.device("cpu"))
     memory = kwargs.get("memory")
     policy_net = kwargs.get("policy_net")
     target_net = kwargs.get("target_net")
@@ -100,12 +103,38 @@ def optimize_model(kwargs):
     transitions = memory.sample(BATCH_SIZE)
     batch = Transaction(*zip(*transitions))
     state_batch = _unpack_state_batch(batch.state)
-    action_batch = torch.cat(batch.action).to(device)
-    reward_batch = torch.cat([torch.tensor([rew], dtype=torch.float32) for rew in batch.reward]).to(device)
+    # move state tensors to device (state_batch is a list of tensors)
+    try:
+        state_batch = [s.to(device) for s in state_batch]
+    except Exception:
+        pass
+    # # state_batch は [port, protocol, features] のリスト -> 各テンソルを device へ
+    # try:
+    #     state_batch = [s.to(device) for s in state_batch]
+    # except Exception:
+    #     # 既に device 上にあるか、非テンソルが入っている場合はそのままにする
+    #     pass
+    # actions should be LongTensor with shape (BATCH_SIZE, 1)
+    action_batch = torch.cat(batch.action).to(device).long()
+    # rewards: ensure each stored reward is a 1-d tensor; build a (BATCH_SIZE,) float tensor
+    try:
+        reward_batch = torch.cat([r.view(-1) for r in batch.reward]).to(device).float()
+    except Exception:
+        # fallback: convert elements to floats then to tensor
+        reward_batch = torch.tensor([float(r) for r in batch.reward], dtype=torch.float32, device=device)
     non_final_mask = torch.tensor([s is not None for s in batch.next_state], device=device, dtype=torch.bool)
     non_final_next_states = [s for s in batch.next_state if s is not None]
     if non_final_next_states:
         next_state_batch = _unpack_state_batch(non_final_next_states)
+        # move next_state tensors to device
+        try:
+            next_state_batch = [s.to(device) for s in next_state_batch]
+        except Exception:
+            pass
+        # try:
+        #     next_state_batch = [s.to(device) for s in next_state_batch]
+        # except Exception:
+        #     pass
     else:
         next_state_batch = None
     if scaler is not None:
@@ -149,7 +178,6 @@ def get_args(params):
     optimize_args = {
         "BATCH_SIZE": params.get("batch_size", 128),
         "GAMMA": params.get("gamma", 0.999),
-        "device": None,
         "memory": None,
         "policy_net": None,
         "target_net": None,
@@ -204,8 +232,8 @@ def train(df, params):
     n_actions = env.action_space.n
 
     logger.info(f"State space: {n_states}, Action space: {n_actions}")
-    policy_net = DeepFlowNetwork(n_states, n_actions)
-    target_net = DeepFlowNetwork(n_states, n_actions)
+    policy_net = DeepFlowNetwork(n_states, n_actions).to(device)
+    target_net = DeepFlowNetwork(n_states, n_actions).to(device)
     target_net.load_state_dict(policy_net.state_dict())
 
     cm_memory = []
@@ -226,7 +254,6 @@ def train(df, params):
     select_args["policy_net"] = policy_net
     select_args["n_actions"] = n_actions
 
-    optimize_args["device"] = torch.device(params.get("device", "cpu"))
     optimize_args["memory"] = memory
     optimize_args["policy_net"] = policy_net
     optimize_args["target_net"] = target_net
@@ -240,13 +267,13 @@ def train(df, params):
         random.seed(i_episode)
 
         initial_state = env.reset()
-        state = fp.to_tensor(initial_state)
+        state = fp.to_tensor(initial_state, device=device)
 
         episode_reward = 0.0
         episode_losses = []
         episode_steps = 0
 
-        for t in count():
+        for t in tqdm(count(), leave=False):
             action = select_action(state, **select_args)
             raw_next_state, reward, terminated, _, info = env.step(action.item())
 
@@ -254,14 +281,16 @@ def train(df, params):
             if isinstance(reward, (list, tuple, np.ndarray)):
                 reward = np.sum(reward)
             episode_reward += float(reward)
+            # store a 1-d scalar tensor for reward (shape: [1]) to keep consistent shapes
+            preserve_reward = torch.tensor([float(reward)], dtype=torch.float32, device=device)
 
             cm_memory.append([
                 info["action"],
                 info["answer"],
             ])
 
-            next_state = fp.to_tensor(raw_next_state) if not terminated else None
-            memory.push(state, action, next_state, reward)
+            next_state = fp.to_tensor(raw_next_state, device=device) if not terminated else None
+            memory.push(state, action, next_state, preserve_reward)
             state = next_state
 
             loss = optimize_model(optimize_args)
