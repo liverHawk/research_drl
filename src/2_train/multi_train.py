@@ -30,8 +30,12 @@ from lib.deep_learn import ReplayMemory, moving_average, Transaction
 # Global variable for epsilon-greedy action selection
 steps_done = 0
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device("mps" if torch.mps.is_available() else "cpu")
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+elif torch.mps.is_available():
+    device = torch.device("mps")
+else:
+    device = torch.device("cpu")
 
 
 # def to_tensor(x, device=torch.device("cpu")):

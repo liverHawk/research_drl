@@ -96,8 +96,8 @@ stages:
       nfiles: 3
     - path: src/2_train/multi_train.py
       hash: md5
-      md5: cd88da64f4e682dd5098a5f7830a4a8b
-      size: 14135
+      md5: 7676c1a04eb681d963c1cb12601e097d
+      size: 14165
     params:
       params.yaml:
         train.batch_size: 256
@@ -106,32 +106,32 @@ stages:
         train.eps_start: 0.9
         train.gamma: 0.99
         train.lr: 0.1
-        train.memory_size: 10000
-        train.n_episodes: 10
+        train.memory_size: 100000
+        train.n_episodes: 1000
         train.port_dim: 32
         train.protocol_dim: 8
-        train.sample_size: 100
+        train.sample_size: 1000
         train.tau: 0.005
         train.update_target_steps: 200
     outs:
     - path: logs/train.log
       hash: md5
-      md5: c437022dd3b8b642a548519756e46f8e
+      md5: 8bcb5c3977690985a95b59de6fb6ed0d
       size: 145
     - path: logs/train_result.log
       hash: md5
-      md5: a63ff3bccfe605ee1c51a30e6dee9382
-      size: 3979
+      md5: cfd41501142836120743ca97acc22078
+      size: 452502
     - path: models
       hash: md5
-      md5: 4cfa44ac2f1fc1fa02e72aeb3748c655.dir
-      size: 2458237
+      md5: ab56803bfdb252b8295e8a4e1f674806.dir
+      size: 2458365
       nfiles: 1
     - path: train/plots
       hash: md5
-      md5: 03221903abbd429720d6285b1be641fd.dir
-      size: 44966
-      nfiles: 3
+      md5: 03519fdad9d21c929c891f31adfc9aaf.dir
+      size: 7432614
+      nfiles: 300
   evaluate:
     cmd: uv run src/3_evaluate/evaluate.py data/processed/normalized/test
     deps:
@@ -142,8 +142,8 @@ stages:
       nfiles: 2
     - path: models
       hash: md5
-      md5: 4cfa44ac2f1fc1fa02e72aeb3748c655.dir
-      size: 2458237
+      md5: ab56803bfdb252b8295e8a4e1f674806.dir
+      size: 2458365
       nfiles: 1
     - path: src/3_evaluate/evaluate.py
       hash: md5
@@ -152,10 +152,10 @@ stages:
     outs:
     - path: evaluate
       hash: md5
-      md5: b734b5dab64be87139428bec24c38a9d.dir
-      size: 29402
+      md5: 852f9bd58b17500d71e9a7b670830b15.dir
+      size: 24725
       nfiles: 2
     - path: logs/evaluate.log
       hash: md5
-      md5: 38009c7a91d7f5bd8959f4a95850ebcd
+      md5: 58dbe163caaef2c3bc951f79420ee7b2
       size: 242
