@@ -5,6 +5,8 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "azure-ai-ml>=1.29.0",
+    "azureml-mlflow>=1.60.0",
     "coloredlogs>=15.0.1",
     "flow-package",
     "imbalanced-learn>=0.15.dev0",

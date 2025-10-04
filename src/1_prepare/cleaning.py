@@ -12,6 +12,8 @@ from tqdm import tqdm
 from ipaddress import ip_address as ip
 from sklearn.preprocessing import LabelEncoder
 import mlflow
+from azure.ai.ml import MLClient
+from azure.identity import DefaultAzureCredential
 
 from lib.utils import CICIDS2017, BASE, setup_logging
 from lib.csv import save_split_csv, multiprocess_save_csv, save_csv
@@ -40,6 +42,8 @@ def adjust_labels(df, adjustment):
         if params[2] and "DoS " in label:
             df.loc[df["Label"] == label, "Label"] = "DoS"
             continue
+        if "Infiltration" in label:
+            df.loc[df["Label"] == label, "Label"] = "Infiltration"
     
     return df
 
@@ -103,11 +107,19 @@ def main():
     all_params = yaml.safe_load(open("params.yaml"))
     params = all_params["prepare"]
 
-    mlflow.set_tracking_uri(all_params["mlflow"]["tracking_uri"])
+    if all_params["mlflow"]["use_azure"]:
+        path = os.path.join(os.path.dirname(__file__), "..", "..", "config.json")
+        ml_client = MLClient.from_config(credential=DefaultAzureCredential(), config_path=path)
+        mlflow_tracking_uri = ml_client.workspaces.get(ml_client.workspace_name).mlflow_tracking_uri
+    else:
+        mlflow_tracking_uri = all_params["mlflow"]["tracking_uri"]
+    
+    mlflow.set_tracking_uri(mlflow_tracking_uri)
     mlflow.set_experiment(
         f"{all_params['mlflow']['experiment_prefix']}_cleaning"
     )
     mlflow.start_run()
+    mlflow.log_param("mlflow_tracking_uri", mlflow_tracking_uri)
 
     print(params)
 

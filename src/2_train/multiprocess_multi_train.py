@@ -569,7 +569,7 @@ def main():
     df = load_csv(input)
 
     # train(df, params)
-    train_with_mp(df, params, n_actors=4)
+    train_with_mp(df, params, n_actors=2)
     mlflow.end_run()
 
 

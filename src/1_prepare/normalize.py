@@ -6,6 +6,8 @@ import pandas as pd
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 import mlflow
+from azure.ai.ml import MLClient
+from azure.identity import DefaultAzureCredential
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from lib.utils import setup_logging
@@ -74,17 +76,23 @@ def main():
     data_path = sys.argv[1]
     all_params = yaml.safe_load(open("params.yaml"))
 
-    mlflow.set_tracking_uri(all_params["mlflow"]["tracking_uri"])
-    mlflow.set_experiment(
-        f"{all_params['mlflow']['experiment_prefix']}_normalize"
-    )
-
     params = all_params["prepare"]
 
     log_path = os.path.join("logs", "normalize.log")
     logger = setup_logging(log_path)
 
+    if all_params["mlflow"]["use_azure"]:
+        ml_client = MLClient.from_config(credential=DefaultAzureCredential(), config_path="./config.json")
+        mlflow_tracking_uri = ml_client.workspaces.get(ml_client.workspace_name).mlflow_tracking_uri
+    else:
+        mlflow_tracking_uri = all_params["mlflow"]["tracking_uri"]
+    
+    mlflow.set_tracking_uri(mlflow_tracking_uri)
+    mlflow.set_experiment(
+        f"{all_params['mlflow']['experiment_prefix']}_normalize"
+    )
     mlflow.start_run()
+    mlflow.log_param("mlflow_tracking_uri", mlflow_tracking_uri)
 
     files = glob(os.path.join(data_path, "*.csv.gz"))
     dfs = [

@@ -6,6 +6,8 @@ import yaml
 import imblearn.over_sampling as imblearn_os
 import pandas as pd
 import mlflow
+from azure.ai.ml import MLClient
+from azure.identity import DefaultAzureCredential
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from lib.utils import setup_logging
@@ -51,7 +53,9 @@ def oversampling(df, method, method_params):
 
     return pd.concat([X_resampled, y_resampled], axis=1)
 
-
+# tenant dc6b9ce9-a6ba-4ed3-bd67-9f9e3ac85cf1
+# client id
+# client secret
 def main():
     logger = setup_logging("logs/sampling.log")
     FIXED_ROWS = 500_000
@@ -59,18 +63,26 @@ def main():
         logger.error("Usage: python sampling.py <data_path>")
         sys.exit(1)
     all_params = yaml.safe_load(open("params.yaml"))
+
+    if all_params["mlflow"]["use_azure"]:
+        ml_client = MLClient.from_config(credential=DefaultAzureCredential(), config_path="./config.json")
+        mlflow_tracking_uri = ml_client.workspaces.get(ml_client.workspace_name).mlflow_tracking_uri
+    else:
+        mlflow_tracking_uri = all_params["mlflow"]["tracking_uri"]
     
-    mlflow.set_tracking_uri(all_params["mlflow"]["tracking_uri"])
+    mlflow.set_tracking_uri(mlflow_tracking_uri)
     mlflow.set_experiment(
-        f"{all_params['mlflow']['experiment_prefix']}_prepare"
+        f"{all_params['mlflow']['experiment_prefix']}_sampling"
     )
+    mlflow.start_run()
+    mlflow.log_param("mlflow_tracking_uri", mlflow_tracking_uri)
 
     params = all_params["prepare"]
 
     data_path = sys.argv[1]
     files = glob(os.path.join(data_path, "*.csv.gz"))
 
-    mlflow.start_run()
+    mlflow.log_param("mlflow_tracking_uri", mlflow_tracking_uri)
     logger.info("Loading CSV files...")
     dfs = [
         pd.read_csv(file) for file in tqdm(files, desc="Loading CSV files")

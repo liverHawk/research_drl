@@ -14,6 +14,7 @@ import mlflow
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
+from sklearn.metrics import confusion_matrix
 from itertools import count
 from glob import glob
 from torch.amp import autocast, GradScaler
@@ -71,13 +72,13 @@ def select_action(state_tensor: torch.Tensor, **kwargs):
     EPS_DECAY = kwargs.get("EPS_DECAY", 200)
     policy_net = kwargs.get("policy_net")
     n_actions = kwargs.get("n_actions")
-    steps_done = kwargs.get("steps_done", 0)
+    _steps_done = kwargs.get("steps_done", 0)
 
     """
     ε-greedy法による行動選択
     """
     sample = random.random()
-    eps_threshold = EPS_END + (EPS_START - EPS_END) * np.exp(-1. * steps_done / EPS_DECAY)
+    eps_threshold = EPS_END + (EPS_START - EPS_END) * np.exp(-1. * _steps_done / EPS_DECAY)
     # state_tensorはリスト形式（[port, protocol, other]）
     if sample > eps_threshold:
         with torch.no_grad():
@@ -191,11 +192,9 @@ def get_args(params):
     return select_args, optimize_args
 
 
-def write_result(cm_memory, episode, n_input, n_output):
+def write_result(cm_true, cm_pred, episode, n_input, n_output):
     # 混同行列の計算
-    cm = np.zeros((n_output, n_output), dtype=int)
-    for action, answer in cm_memory:
-        cm[action][answer] += 1
+    cm = confusion_matrix(cm_true, cm_pred, labels=range(n_output), normalize="true")
     with open("logs/train_result.log", "a") as f:
         f.write(f"Episode {episode}:\n")
         f.write(f"{cm}\n")
@@ -205,6 +204,7 @@ def write_result(cm_memory, episode, n_input, n_output):
 
 
 def train(df, params):
+    global steps_done
     logger = setup_logging("logs/train.log")
 
     # ログパラメータを保存
@@ -218,7 +218,13 @@ def train(df, params):
     logger.info("Starting training...")
     label_count = len(df["Label"].unique())
     reward_matrix = np.ones((label_count, label_count)) * -1.0
-    np.fill_diagonal(reward_matrix, 1.0)
+    np.fill_diagonal(reward_matrix, 2.0)
+    reward_matrix[0][0] = 0.0
+    reward_matrix[0][1:] = -1.2
+
+    with open("logs/reward_matrix.log", "w") as f:
+        f.write(f"{reward_matrix}\n")
+    mlflow.log_artifact("logs/reward_matrix.log")
 
     columns = df.columns.tolist()
     columns.remove("Label")
@@ -240,7 +246,8 @@ def train(df, params):
     target_net = DeepFlowNetwork(n_states, n_actions).to(device)
     target_net.load_state_dict(policy_net.state_dict())
 
-    cm_memory = []
+    cm_true = []
+    cm_pred = []
 
     # メトリクス収集用
     metrics = {
@@ -266,6 +273,11 @@ def train(df, params):
     os.makedirs("train/plots", exist_ok=True)
 
     log_plot_interval = params.get("log_plot_interval", 10)
+    clear_reward = 2.0
+    limit_reward = -100.0
+    counter = {
+        i: [] for i in range(n_actions)
+    }
 
     for i_episode in tqdm(range(params["n_episodes"])):
         random.seed(i_episode)
@@ -276,8 +288,16 @@ def train(df, params):
         episode_reward = 0.0
         episode_losses = []
         episode_steps = 0
+        steps_done = 0
+
+        action_count = {i: 0 for i in range(n_actions)}
 
         for t in tqdm(count(), leave=False):
+            steps_done += 1
+
+            select_args["steps_done"] = steps_done
+            optimize_args["steps_done"] = steps_done
+
             action = select_action(state, **select_args)
             raw_next_state, reward, terminated, _, info = env.step(action.item())
 
@@ -288,10 +308,10 @@ def train(df, params):
             # store a 1-d scalar tensor for reward (shape: [1]) to keep consistent shapes
             preserve_reward = torch.tensor([float(reward)], dtype=torch.float32, device=device)
 
-            cm_memory.append([
-                info["action"],
-                info["answer"],
-            ])
+            action_count[action.item()] += 1
+
+            cm_true.append(info["answer"])
+            cm_pred.append(info["action"])
 
             next_state = fp.to_tensor(raw_next_state, device=device) if not terminated else None
             memory.push(state, action, next_state, preserve_reward)
@@ -302,17 +322,23 @@ def train(df, params):
                 episode_losses.append(loss)
             episode_steps += 1
 
-            if terminated:
+            if episode_reward > clear_reward:
+                clear_reward += 1.0
+                break
+            elif episode_reward < limit_reward or terminated:
                 break
 
         avg_loss = float(np.mean(episode_losses)) if episode_losses else 0.0
-        cm, accuracy = write_result(cm_memory, i_episode, n_states, n_actions)
+        cm, accuracy = write_result(cm_true, cm_pred, i_episode, n_states, n_actions)
 
         metrics["reward"].append(episode_reward)
         metrics["loss"].append(avg_loss)
         metrics["accuracy"].append(accuracy)
         metrics["steps"].append(episode_steps)
         metrics["last_cm"] = cm.copy()
+
+        for i in range(n_actions):
+            counter[i].append(action_count[i])
 
         # エピソードごとにログ用CSVへ追記
         os.makedirs("train", exist_ok=True)
@@ -325,11 +351,19 @@ def train(df, params):
         })
         metrics_df.to_csv("train/metrics.csv", index=False)
 
+        # action_count: label -> count; column=label, row=count
+        action_count_df = pd.DataFrame({
+            f"label_{i}": counter[i] for i in range(n_actions)
+        })
+        action_count_df.to_csv("train/action_count.csv", index=False)
+
+
         # mlflow に逐次メトリクスを送信（step=i_episode）
         mlflow.log_metric("reward", float(episode_reward), step=i_episode)
         mlflow.log_metric("loss", float(avg_loss), step=i_episode)
         mlflow.log_metric("accuracy", float(accuracy), step=i_episode)
         mlflow.log_metric("steps", int(episode_steps), step=i_episode)
+        mlflow.log_metric("clear_reward", float(clear_reward), step=i_episode)
 
         # プロットを定期的に作成して mlflow にアップロード
         if (i_episode + 1) % log_plot_interval == 0 or i_episode == params["n_episodes"] - 1:
@@ -370,7 +404,13 @@ def main():
     input = sys.argv[1]
     all_params = yaml.safe_load(open("params.yaml"))
 
-    mlflow.set_tracking_uri(all_params["mlflow"]["tracking_uri"])
+    if all_params["mlflow"]["use_azure"]:
+        ml_client = MLClient.from_config(credential=DefaultAzureCredential(), config_path="./config.json")
+        mlflow_tracking_uri = ml_client.workspaces.get(ml_client.workspace_name).mlflow_tracking_uri
+    else:
+        mlflow_tracking_uri = all_params["mlflow"]["tracking_uri"]
+    
+    mlflow.set_tracking_uri(mlflow_tracking_uri)
     mlflow.set_experiment(
         f"{all_params['mlflow']['experiment_prefix']}_train"
     )

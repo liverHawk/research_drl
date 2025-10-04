@@ -29,7 +29,7 @@ def _plot_loss(data, **params):
     save_path = params.get("save_path")
     if save_path:
         fig.savefig(save_path, bbox_inches="tight")
-    return fig, ax
+    plt.close()
 
 
 def _plot_accuracy(data, **params):
@@ -49,7 +49,7 @@ def _plot_accuracy(data, **params):
     save_path = params.get("save_path")
     if save_path:
         fig.savefig(save_path, bbox_inches="tight")
-    return fig, ax
+    plt.close()
 
 
 def _plot_weighted_f1(data, **params):
@@ -69,7 +69,7 @@ def _plot_weighted_f1(data, **params):
     save_path = params.get("save_path")
     if save_path:
         fig.savefig(save_path, bbox_inches="tight")
-    return fig, ax
+    plt.close()
 
 
 def _plot_confusion_matrix(data, **params):
@@ -96,7 +96,7 @@ def _plot_confusion_matrix(data, **params):
     save_path = params.get("save_path")
     if save_path:
         fig.savefig(save_path, bbox_inches="tight")
-    return fig, ax
+    plt.close()
 
 
 def plot_data(data, data_type, **params):

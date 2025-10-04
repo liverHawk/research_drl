@@ -6,6 +6,7 @@ import torch
 import yaml
 import pandas as pd
 import numpy as np
+from sklearn.metrics import confusion_matrix
 
 from itertools import count
 from glob import glob
@@ -29,43 +30,53 @@ def load_csv(input):
     ])
     return df
 
-
-def write_result(cm_memory, prefix):
-    # cm_memory: list of [predicted, actual]
-    cm_data = []
-    for pred, actual in cm_memory:
-        pred_val = pred.item() if hasattr(pred, "item") else int(pred)
-        actual_val = actual.item() if hasattr(actual, "item") else int(actual)
-        cm_data.append([pred_val, actual_val])
-
-    if len(cm_data) == 0:
-        # 空の場合は空のファイルを作るだけ
-        os.makedirs("evaluate", exist_ok=True)
-        cm_path = os.path.join("evaluate", f"{prefix}_confusion_matrix.csv")
-        pd.DataFrame(columns=["Predicted", "Actual"]).to_csv(cm_path, index=False)
-        return None, 0.0, cm_path
-
-    # クラス数はデータ上の最大ラベルから推定
-    preds = [p for p, a in cm_data]
-    actuals = [a for p, a in cm_data]
-    n = max(max(preds), max(actuals)) + 1
-    cm = np.zeros((n, n), dtype=int)
-
-    # plot.py のラベル付け（x: Actual, y: Predicted）に合わせて cm[predicted][actual] を増やす
-    for pred, actual in cm_data:
-        cm[pred][actual] += 1
-
-    os.makedirs("evaluate", exist_ok=True)
-    cm_path = os.path.join("evaluate", f"{prefix}_confusion_matrix.csv")
-    # CSV 保存（行: Predicted, 列: Actual のマトリクス形式）
-    pd.DataFrame(cm).to_csv(cm_path, index=True)
-
+def write_result(cm_true, cm_pred, episode, n_input, n_output):
+    # 混同行列の計算
+    cm = confusion_matrix(cm_true, cm_pred, labels=range(n_output), normalize="true")
+    with open("logs/evaluate_result.log", "a") as f:
+        f.write(f"Episode {episode}:\n")
+        f.write(f"{cm}\n")
     total = cm.sum()
-    accuracy = float(np.trace(cm) / total) if total > 0 else 0.0
-    return cm, accuracy, cm_path
+    accuracy = float(cm.diagonal().sum() / total) if total > 0 else 0.0
+    return cm, accuracy
+
+# def write_result(cm_memory, prefix):
+#     # cm_memory: list of [predicted, actual]
+#     cm_data = []
+#     for pred, actual in cm_memory:
+#         pred_val = pred.item() if hasattr(pred, "item") else int(pred)
+#         actual_val = actual.item() if hasattr(actual, "item") else int(actual)
+#         cm_data.append([pred_val, actual_val])
+
+#     if len(cm_data) == 0:
+#         # 空の場合は空のファイルを作るだけ
+#         os.makedirs("evaluate", exist_ok=True)
+#         cm_path = os.path.join("evaluate", f"{prefix}_confusion_matrix.csv")
+#         pd.DataFrame(columns=["Predicted", "Actual"]).to_csv(cm_path, index=False)
+#         return None, 0.0, cm_path
+
+#     # クラス数はデータ上の最大ラベルから推定
+#     preds = [p for p, a in cm_data]
+#     actuals = [a for p, a in cm_data]
+#     n = max(max(preds), max(actuals)) + 1
+#     cm = np.zeros((n, n), dtype=int)
+
+#     # plot.py のラベル付け（x: Actual, y: Predicted）に合わせて cm[predicted][actual] を増やす
+#     for pred, actual in cm_data:
+#         cm[pred][actual] += 1
+
+#     os.makedirs("evaluate", exist_ok=True)
+#     cm_path = os.path.join("evaluate", f"{prefix}_confusion_matrix.csv")
+#     # CSV 保存（行: Predicted, 列: Actual のマトリクス形式）
+#     pd.DataFrame(cm).to_csv(cm_path, index=True)
+
+#     total = cm.sum()
+#     accuracy = float(np.trace(cm) / total) if total > 0 else 0.0
+#     return cm, accuracy, cm_path
 
 
 def test(df, params):
+    mlflow.autolog()
     input = InputType(
         data=df,
         is_test=True,
