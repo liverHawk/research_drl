@@ -10,8 +10,8 @@ stages:
       nfiles: 5
     - path: src/1_prepare/cleaning.py
       hash: md5
-      md5: fe013dfbfb888af361bbd07a731fc73f
-      size: 4950
+      md5: 1fa736b26cd25366860c28e1c31b015b
+      size: 5053
     params:
       params.yaml:
         prepare.adjustment.attempted: false
@@ -20,24 +20,24 @@ stages:
     outs:
     - path: data/processed/cleaned
       hash: md5
-      md5: 76991bae4070479651abe6a6ba4c381e.dir
-      size: 191314612
+      md5: a15df589b372a5205781803668ccfdf8.dir
+      size: 191314377
       nfiles: 5
     - path: labels.txt
       hash: md5
-      md5: 63207b22831c738378d27e0c1363edb3
-      size: 115
+      md5: 125709ed79f960d7f27693f0639b755b
+      size: 91
     - path: logs/cleaning.log
       hash: md5
-      md5: e46841d8032dc60af33820ed6eb58823
+      md5: a248f649caff2679c9aff57aab04394f
       size: 136
   prepare_normalize:
     cmd: uv run src/1_prepare/normalize.py data/processed/cleaned
     deps:
     - path: data/processed/cleaned
       hash: md5
-      md5: 76991bae4070479651abe6a6ba4c381e.dir
-      size: 191314612
+      md5: a15df589b372a5205781803668ccfdf8.dir
+      size: 191314377
       nfiles: 5
     - path: src/1_prepare/normalize.py
       hash: md5
@@ -50,20 +50,20 @@ stages:
     outs:
     - path: data/processed/normalized
       hash: md5
-      md5: 001666c2a45635f27b29858796bdc950.dir
-      size: 77454741
+      md5: 3c25d903ffd30f0307b3db5e520bbdc5.dir
+      size: 77454769
       nfiles: 5
     - path: logs/normalize.log
       hash: md5
-      md5: 306b56835521108e618a5e7f125391cc
+      md5: 81631ff53ff0d81a663a9a57c71d8bb0
       size: 5755
   prepare_sampling:
     cmd: uv run src/1_prepare/sampling.py data/processed/normalized/train
     deps:
     - path: data/processed/normalized/train
       hash: md5
-      md5: 0f937d5b05e58939a491db20d6305cd6.dir
-      size: 54238821
+      md5: 12700971c713ee7c9e28382d99b4d6f3.dir
+      size: 54239393
       nfiles: 3
     - path: src/1_prepare/sampling.py
       hash: md5
@@ -79,25 +79,25 @@ stages:
     outs:
     - path: data/processed/sampled
       hash: md5
-      md5: 7e46ac437a978d0db3039d7575939f20.dir
-      size: 54238794
+      md5: 55a9411ee68e4b8c42aeaa855ad1f298.dir
+      size: 54239366
       nfiles: 3
     - path: logs/sampling.log
       hash: md5
-      md5: 3185be47fa0851519ad9de2340d1f7c5
+      md5: 83d1c179c27161f5224ea3788627c82c
       size: 143
   train:
     cmd: uv run src/2_train/multi_train.py data/processed/sampled
     deps:
     - path: data/processed/sampled
       hash: md5
-      md5: 7e46ac437a978d0db3039d7575939f20.dir
-      size: 54238794
+      md5: 55a9411ee68e4b8c42aeaa855ad1f298.dir
+      size: 54239366
       nfiles: 3
     - path: src/2_train/multi_train.py
       hash: md5
-      md5: 9c7f429bb8975f9dda4dae9d57629213
-      size: 15645
+      md5: e35951b27dff0596a890f9392f54f753
+      size: 15647
     params:
       params.yaml:
         train.batch_size: 256
@@ -107,7 +107,7 @@ stages:
         train.gamma: 0.99
         train.lr: 0.001
         train.memory_size: 100000
-        train.n_episodes: 5000
+        train.n_episodes: 1000
         train.port_dim: 32
         train.protocol_dim: 8
         train.sample_size: 100000
@@ -116,46 +116,46 @@ stages:
     outs:
     - path: logs/train.log
       hash: md5
-      md5: 04174d91b9bd970218e3dcc5c94cc6fe
+      md5: 19e83256444f348ffb3648d1f4cf919b
       size: 145
     - path: logs/train_result.log
       hash: md5
-      md5: 4841814cb4bba5d7cddd8303d7bf9ab8
-      size: 6845035
+      md5: 2d67ef9a1fc7670ccfc7a64881b96a38
+      size: 1129594
     - path: models
       hash: md5
-      md5: e15cc7fd6c4eaaea3afe17b6f66d3b13.dir
-      size: 2458365
+      md5: 68185cc814c05098df21b45816cb2f9c.dir
+      size: 2457341
       nfiles: 1
     - path: train/plots
       hash: md5
-      md5: e86997a7af6b404adf45645070ad8989.dir
-      size: 33056750
-      nfiles: 1500
+      md5: 78bd5c72d7740cd36a4634bb99c92417.dir
+      size: 6104903
+      nfiles: 300
   evaluate:
     cmd: uv run src/3_evaluate/evaluate.py data/processed/normalized/test
     deps:
     - path: data/processed/normalized/test
       hash: md5
-      md5: 72afa08d4498437198ee3803e3a78b5b.dir
-      size: 23215920
+      md5: d8a0ecba66add3d1e1a8a0ecb4008854.dir
+      size: 23215376
       nfiles: 2
     - path: models
       hash: md5
-      md5: d935455150d0d85d3fa1f0c8269a575b.dir
-      size: 2458365
+      md5: 68185cc814c05098df21b45816cb2f9c.dir
+      size: 2457341
       nfiles: 1
     - path: src/3_evaluate/evaluate.py
       hash: md5
-      md5: 8ad6303cd66e5adf0cfb4092f64455a2
-      size: 5247
+      md5: 15b40204f63159c6b825ae818cd79fd7
+      size: 9957
     outs:
     - path: evaluate
       hash: md5
-      md5: c101afabd28ba114e0d69e0245c5630a.dir
-      size: 31637
+      md5: d0a3b122b39e8cbe117ff20c7ab6f9b6.dir
+      size: 32276
       nfiles: 2
     - path: logs/evaluate.log
       hash: md5
-      md5: 86aadc4b735fab3b9359484e4df3965b
+      md5: b342351bbac093bb72386c41b1a63e1d
       size: 242

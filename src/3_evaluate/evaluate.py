@@ -6,7 +6,7 @@ import torch
 import yaml
 import pandas as pd
 import numpy as np
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import multilabel_confusion_matrix, confusion_matrix
 
 from itertools import count
 from glob import glob
@@ -30,15 +30,72 @@ def load_csv(input):
     ])
     return df
 
-def write_result(cm_true, cm_pred, episode, n_input, n_output):
-    # 混同行列の計算
-    cm = confusion_matrix(cm_true, cm_pred, labels=range(n_output), normalize="true")
-    with open("logs/evaluate_result.log", "a") as f:
-        f.write(f"Episode {episode}:\n")
-        f.write(f"{cm}\n")
-    total = cm.sum()
-    accuracy = float(cm.diagonal().sum() / total) if total > 0 else 0.0
-    return cm, accuracy
+def write_result(cm_true, cm_pred, episode, n_output):
+    # Ensure inputs are numpy arrays of integer labels or binary indicator arrays
+    y_true = np.array(cm_true)
+    y_pred = np.array(cm_pred)
+
+    # Convert torch tensors (or single-element tensors) to python ints
+    def to_int_array(arr):
+        if arr.dtype == object:
+            # mixed objects, try to convert elements
+            converted = []
+            for v in arr:
+                if hasattr(v, 'item'):
+                    converted.append(int(v.item()))
+                elif isinstance(v, (list, np.ndarray)):
+                    # if it's an array-like of length >1, leave as is
+                    converted.append(np.array(v))
+                else:
+                    converted.append(int(v))
+            return np.array(converted, dtype=object)
+        else:
+            # numeric dtype -> cast to ints if scalars
+            if arr.ndim == 1:
+                return arr.astype(int)
+            return arr
+
+    y_true = to_int_array(y_true)
+    y_pred = to_int_array(y_pred)
+
+    # If labels are 1D integer arrays (single-label multiclass), use confusion_matrix
+    if y_true.ndim == 1 and y_pred.ndim == 1:
+        # sanity: lengths must match
+        if y_true.shape[0] != y_pred.shape[0]:
+            raise ValueError("y_true and y_pred length mismatch")
+        cm = confusion_matrix(y_true, y_pred, labels=list(range(n_output)))
+        total = cm.sum()
+        accuracy = float(np.trace(cm) / total) if total > 0 else 0.0
+        # log to evaluate_result
+        os.makedirs(os.path.dirname("logs/evaluate_result.log"), exist_ok=True)
+        with open("logs/evaluate_result.log", "a") as f:
+            f.write(f"Episode {episode}:\n")
+            f.write(f"Confusion matrix shape: {cm.shape}\n")
+            f.write(f"{cm}\n")
+        # Save CSV (rows: Predicted, cols: Actual) to evaluate directory
+        os.makedirs("evaluate", exist_ok=True)
+        cm_path = os.path.join("evaluate", f"confusion_matrix_episode_{episode}.csv")
+        # Save as DataFrame with integer indices/columns
+        pd.DataFrame(cm, index=[f"pred_{i}" for i in range(cm.shape[0])], columns=[f"act_{i}" for i in range(cm.shape[1])]).to_csv(cm_path)
+        return cm, accuracy, cm_path
+    else:
+        # Otherwise, attempt multilabel confusion matrix (expects binary indicator arrays)
+        try:
+            cm = multilabel_confusion_matrix(y_true, y_pred, labels=range(n_output))
+        except Exception as e:
+            raise ValueError(f"Failed to compute confusion matrices: {e}")
+
+        os.makedirs(os.path.dirname("logs/evaluate_result.log"), exist_ok=True)
+        with open("logs/evaluate_result.log", "a") as f:
+            f.write(f"Episode {episode}:\n")
+            f.write(f"{cm}\n")
+        total = cm.sum()
+        accuracy = float(cm.diagonal().sum() / total) if total > 0 else 0.0
+        os.makedirs("evaluate", exist_ok=True)
+        cm_path = os.path.join("evaluate", f"multilabel_confusion_episode_{episode}.npz")
+        # Save multilabel confusion matrices as a numpy archive
+        np.savez_compressed(cm_path, cm=cm)
+        return cm, accuracy, cm_path
 
 # def write_result(cm_memory, prefix):
 #     # cm_memory: list of [predicted, actual]
@@ -112,8 +169,36 @@ def test(df, params):
 
             raw_next_state, reward, terminated, _, info = env.step(predicted_action.item())
             # predicted と actual を混同行列用に保存（predicted, actual）
-            actual_answer = info["answer"]
-            cm_memory.append([predicted_action, actual_answer])
+            actual_answer = info.get("answer")
+            # Convert predicted_action tensor to python int
+            try:
+                if hasattr(predicted_action, 'item'):
+                    pred_val = int(predicted_action.item())
+                elif isinstance(predicted_action, (list, np.ndarray)):
+                    pred_val = int(np.array(predicted_action).flatten()[0])
+                else:
+                    pred_val = int(predicted_action)
+            except Exception:
+                pred_val = predicted_action
+
+            # Normalize actual_answer to an int if possible
+            try:
+                if hasattr(actual_answer, 'item'):
+                    actual_val = int(actual_answer.item())
+                elif isinstance(actual_answer, (list, np.ndarray)):
+                    # if one-hot or list, try to reduce to label index
+                    arr = np.array(actual_answer)
+                    if arr.ndim == 1 and arr.size > 1 and set(np.unique(arr)) <= {0, 1}:
+                        # one-hot or multi-hot -> argmax
+                        actual_val = int(arr.argmax())
+                    else:
+                        actual_val = int(arr.flatten()[0])
+                else:
+                    actual_val = int(actual_answer)
+            except Exception:
+                actual_val = actual_answer
+
+            cm_memory.append([pred_val, actual_val])
 
             if terminated:
                 break
@@ -130,7 +215,9 @@ def test(df, params):
     logger.info("Evaluation completed.")
 
     # 結果保存と mlflow ログ
-    cm, accuracy, cm_csv_path = write_result(cm_memory, "evaluate")
+    cm_answer = [a for p, a in cm_memory]
+    cm_action = [p for p, a in cm_memory]
+    cm, accuracy, cm_csv_path = write_result(cm_answer, cm_action, i_loop+1, env.action_space.n)
     # 数値メトリクスを mlflow に保存（数値のみ）
     total_samples = int(cm.sum()) if cm is not None else 0
     mlflow.log_metric("accuracy", float(accuracy))

@@ -32,7 +32,7 @@ from lib.deep_learn import ReplayMemory, moving_average, Transaction
 steps_done = 0
 
 if torch.cuda.is_available():
-    device = torch.device("cuda")
+    device = torch.device("cuda:1")
 elif torch.mps.is_available():
     device = torch.device("mps")
 else:

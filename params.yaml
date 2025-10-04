@@ -40,7 +40,7 @@ train:
   tau: 0.005
   lr: 0.001
   memory_size: 100000
-  n_episodes: 5000
+  n_episodes: 1000
   sample_size: 100000
 
 evaluate:
