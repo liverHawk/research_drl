@@ -13,3 +13,4 @@ __pycache__
 /models
 /mlartifacts
 /mlruns
+config.json

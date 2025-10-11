@@ -161,8 +161,8 @@ def main():
         for file in files:
             save_csv(file[0], file[1])
 
-    mlflow.log_artifact("logs/cleaning.log")
-    mlflow.log_artifact("labels.txt")
+    mlflow.log_artifact("logs/cleaning.log", artifact_path="logs")
+    mlflow.log_artifact("labels.txt", artifact_path="logs")
 
     mlflow.end_run()
 

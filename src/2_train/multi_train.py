@@ -11,6 +11,9 @@ import torch.nn.utils as utils
 import torch.optim as optim
 import mlflow
 
+from azure.ai.ml import MLClient
+from azure.identity import DefaultAzureCredential
+
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
@@ -37,19 +40,6 @@ elif torch.mps.is_available():
     device = torch.device("mps")
 else:
     device = torch.device("cpu")
-
-
-# def to_tensor(x, device=torch.device("cpu")):
-#     # numpy配列を効率的にテンソルに変換
-#     if isinstance(x, (list, tuple)):
-#         x = np.array(x)
-    
-#     # ポートとプロトコルは整数型、バッチサイズ1で作成
-#     port = torch.tensor([x[0]], dtype=torch.long, device=device)
-#     protocol = torch.tensor([x[1]], dtype=torch.long, device=device)
-#     # 残りの特徴量は浮動小数点型、バッチサイズ1で作成
-#     features = torch.tensor(x[2:].reshape(1, -1), dtype=torch.float32, device=device)
-#     return [port, protocol, features]
 
 def load_csv(input):
     files = glob(os.path.join(input, "*.csv.gz"))
@@ -113,15 +103,9 @@ def optimize_model(kwargs):
         state_batch = [s.to(device) for s in state_batch]
     except Exception:
         pass
-    # # state_batch は [port, protocol, features] のリスト -> 各テンソルを device へ
-    # try:
-    #     state_batch = [s.to(device) for s in state_batch]
-    # except Exception:
-    #     # 既に device 上にあるか、非テンソルが入っている場合はそのままにする
-    #     pass
-    # actions should be LongTensor with shape (BATCH_SIZE, 1)
+
     action_batch = torch.cat(batch.action).to(device).long()
-    # rewards: ensure each stored reward is a 1-d tensor; build a (BATCH_SIZE,) float tensor
+
     try:
         reward_batch = torch.cat([r.view(-1) for r in batch.reward]).to(device).float()
     except Exception:
@@ -136,10 +120,7 @@ def optimize_model(kwargs):
             next_state_batch = [s.to(device) for s in next_state_batch]
         except Exception:
             pass
-        # try:
-        #     next_state_batch = [s.to(device) for s in next_state_batch]
-        # except Exception:
-        #     pass
+
     else:
         next_state_batch = None
     if scaler is not None:
@@ -366,24 +347,22 @@ def train(df, params):
         mlflow.log_metric("clear_reward", float(clear_reward), step=i_episode)
 
         # プロットを定期的に作成して mlflow にアップロード
-        if (i_episode + 1) % log_plot_interval == 0 or i_episode == params["n_episodes"] - 1:
-            # Loss plot
-            loss_path = os.path.join("train/plots", f"loss_ep_{i_episode:04d}.png")
-            plot_lib.plot_data(metrics["loss"], "loss", save_path=loss_path, window=params.get("plot_window", 50))
-            mlflow.log_artifact(loss_path)
+    else:
+        # Loss plot
+        loss_path = os.path.join("train/plots", f"loss_ep_{i_episode+1:04d}.png")
+        plot_lib.plot_data(metrics["loss"], "loss", save_path=loss_path, window=params.get("plot_window", 50))
+        mlflow.log_artifact(loss_path)
 
-            # Accuracy plot
-            acc_path = os.path.join("train/plots", f"accuracy_ep_{i_episode:04d}.png")
-            plot_lib.plot_data(metrics["accuracy"], "accuracy", save_path=acc_path, window=params.get("plot_window", 50))
-            mlflow.log_artifact(acc_path)
+        # Accuracy plot
+        acc_path = os.path.join("train/plots", f"accuracy_ep_{i_episode+1:04d}.png")
+        plot_lib.plot_data(metrics["accuracy"], "accuracy", save_path=acc_path, window=params.get("plot_window", 50))
+        mlflow.log_artifact(acc_path)
 
-            # 最後の混同行列（存在する場合）
-            if metrics["last_cm"] is not None:
-                cm_path = os.path.join("train/plots", f"confusion_ep_{i_episode:04d}.png")
-                plot_lib.plot_data(metrics["last_cm"], "confusion_matrix", save_path=cm_path, fmt=".0f")
-                mlflow.log_artifact(cm_path)
-
-        cm_memory = []
+        # 最後の混同行列（存在する場合）
+        if metrics["last_cm"] is not None:
+            cm_path = os.path.join("train/plots", f"confusion_ep_{i_episode+1:04d}.png")
+            plot_lib.plot_data(metrics["last_cm"], "confusion_matrix", save_path=cm_path, fmt=".0f")
+            mlflow.log_artifact(cm_path)
 
     # 学習終了後に最終アーティファクトを保存
     # モデル

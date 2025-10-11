@@ -63,7 +63,7 @@ def write_result(cm_true, cm_pred, episode, n_output):
         # sanity: lengths must match
         if y_true.shape[0] != y_pred.shape[0]:
             raise ValueError("y_true and y_pred length mismatch")
-        cm = confusion_matrix(y_true, y_pred, labels=list(range(n_output)))
+        cm = confusion_matrix(y_pred, y_true, labels=list(range(n_output)), normalize="true")
         total = cm.sum()
         accuracy = float(np.trace(cm) / total) if total > 0 else 0.0
         # log to evaluate_result
@@ -250,6 +250,11 @@ def main():
 
     input = sys.argv[1]
     df = load_csv(input)
+    label_counts = df["Label"].value_counts()
+    with open("logs/evaluate_label_distribution.log", "w") as f:
+        for label, count in label_counts.items():
+            f.write(f"Label {label}: {count}\n")
+            print(f"Label {label}: {count}")
 
     test(df, params)
     mlflow.end_run()

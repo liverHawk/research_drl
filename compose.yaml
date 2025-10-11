@@ -1,0 +1,15 @@
+services:
+  cuda:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    runtime: nvidia
+    tty: true
+    environment:
+      - http_proxy=${http_proxy}
+      - https_proxy=${https_proxy}
+      - HTTP_PROXY=${HTTP_PROXY}
+      - HTTPS_PROXY=${HTTPS_PROXY}
+    volumes:
+      - ./:/workspace
+    working_dir: /workspace
